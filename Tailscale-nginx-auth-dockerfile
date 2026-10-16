@@ -1,11 +1,23 @@
-FROM golang:1.20 AS builder
+ARG TAILSCALE_VERSION=v1.104.1
 
-RUN cat /etc/resolv.conf
-RUN git clone https://github.com/tailscale/tailscale
-WORKDIR tailscale/cmd/nginx-auth
-RUN go build -ldflags '-linkmode external -w -extldflags "-static"' .
-RUN pwd
+# Tailscale v1.104.x requires Go >= 1.27.1. The builder runs natively on the
+# CI host and cross-compiles for each target platform (no QEMU needed).
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine3.24 AS builder
+ARG TAILSCALE_VERSION
+ARG TARGETOS
+ARG TARGETARCH
+RUN apk add --no-cache git
+RUN git clone --depth 1 --branch ${TAILSCALE_VERSION} \
+    https://github.com/tailscale/tailscale.git /src
+WORKDIR /src
+# nginx-auth is pure Go, so CGO_ENABLED=0 gives a fully static binary.
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags '-s -w' -o /out/nginx-auth ./cmd/nginx-auth
 
-FROM alpine:3.16
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates
-COPY --from=builder /go/tailscale/cmd/nginx-auth/nginx-auth /usr/local/bin/
+COPY --from=builder /out/nginx-auth /usr/local/bin/nginx-auth
+# There is no systemd socket activation in a container, so nginx-auth must be
+# told where to create its unix socket. It also needs tailscaled's LocalAPI
+# socket, so mount /var/run/tailscale from the host (or a tailscale sidecar).
+CMD ["nginx-auth", "-sockpath", "/run/tailscale.nginx-auth.sock"]

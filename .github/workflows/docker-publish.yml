@@ -24,8 +24,9 @@ jobs:
             version_arg: TAILSCALE_VERSION
     env:
       # Docker Hub namespace: the repository variable DOCKERHUB_NAMESPACE if set
-      # (e.g. an organization), otherwise the DOCKERHUB_USERNAME secret.
-      IMAGE: ${{ vars.DOCKERHUB_NAMESPACE || secrets.DOCKERHUB_USERNAME }}/${{ matrix.name }}
+      # (e.g. an organization), otherwise the DOCKERHUB_USERNAME secret. The
+      # 'local' fallback lets PR builds run before the secrets are configured.
+      IMAGE: ${{ vars.DOCKERHUB_NAMESPACE || secrets.DOCKERHUB_USERNAME || 'local' }}/${{ matrix.name }}
     steps:
       - uses: actions/checkout@v7
 
